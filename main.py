@@ -12,7 +12,7 @@ with open('config.json', 'r') as c:
     params = json.load(c)["params"]
 
 local_server = True
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static')
 app.secret_key = 'super-secret-key'
 app.config.update(
     MAIL_SERVER = 'smtp.gmail.com',
