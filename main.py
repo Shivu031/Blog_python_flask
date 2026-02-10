@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, session, redirect
+from flask import Flask, render_template, request, session, redirect, flash
 from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail
 import json
@@ -6,21 +6,37 @@ from datetime import datetime
 import math
 import os
 from werkzeug.utils import secure_filename
-
+from flask_jwt_extended import (
+    JWTManager, create_access_token,
+    jwt_required, get_jwt_identity,set_access_cookies, unset_jwt_cookies
+)
+from flask import make_response
+from werkzeug.security import generate_password_hash, check_password_hash
 
 with open('config.json', 'r') as c:
     params = json.load(c)["params"]
 
 local_server = True
 app = Flask(__name__, static_folder='static')
+app.config["JWT_SECRET_KEY"] = params['jwt-secret-key']  
+jwt = JWTManager(app)
 app.secret_key = 'super-secret-key'
 app.config.update(
     MAIL_SERVER = 'smtp.gmail.com',
     MAIL_PORT = '465',
     MAIL_USE_SSL = True,
     MAIL_USERNAME = params['gmail-user'],
-    MAIL_PASSWORD=  params['gmail-password']
+    MAIL_PASSWORD=  params['gmail-password'],
+    JWT_TOKEN_LOCATION=["cookies"],
+    JWT_COOKIE_SECURE=False,   # True only in HTTPS
+    JWT_ACCESS_COOKIE_PATH="/",
+    JWT_COOKIE_CSRF_PROTECT=False
 )
+
+@jwt.unauthorized_loader
+def unauthorized_callback(reason):
+    return redirect("/userlogin")
+
 mail = Mail(app)
 if(local_server):
     app.config['SQLALCHEMY_DATABASE_URI'] = params['local_uri']
@@ -29,6 +45,11 @@ else:
 app.config['UPLOAD_FOLDER'] = params['upload_location']
 db = SQLAlchemy(app)
 
+class Users(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(20), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password = db.Column(db.String(255), nullable=False)
 
 class Contacts(db.Model):
     sno = db.Column(db.Integer, primary_key=True)
@@ -47,8 +68,61 @@ class Posts(db.Model):
     date = db.Column(db.String(12), nullable=True)
     img_file = db.Column(db.String(12), nullable=True)
 
+@app.route("/register", methods=['POST','GET'])
+def register():
+    if(request.method=='POST'):
+        username = request.form.get('username')
+        email = request.form.get('email')
+        password = request.form.get('password')
+        if Users.query.filter_by(email=email).first():
+            flash("Email already exists", "danger")
+            return redirect('/register')
+        
+        hashed_pass = generate_password_hash(
+            password,
+            method="pbkdf2:sha256",
+            salt_length=16
+        )
+        user = Users(username=username, email=email, password=hashed_pass)
+        db.session.add(user)
+        db.session.commit()
+        return redirect('/userlogin')
+    return render_template('register.html')
+
+@app.route('/userlogin', methods=['POST','GET'])
+def api_login():
+    if request.method=='POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+
+        user = Users.query.filter_by(email=email).first()
+        if not user:
+            flash("Email not found", "danger")
+            return redirect('/userlogin')
+        if not check_password_hash(user.password, password):
+            flash("Incorrect entered password", "danger")
+            return redirect('/userlogin')
+
+        # Create JWT
+        access_token = create_access_token(identity=user.id)
+
+        # Store JWT in cookie
+        response = make_response(redirect("/"))
+        set_access_cookies(response, access_token)
+        return response
+    return render_template('userlogin.html')
+
+@app.route("/userlogout")
+def user_logout():
+    response = make_response(redirect("/userlogin"))
+    unset_jwt_cookies(response)
+    return response
+
 @app.route("/")
+@jwt_required()
 def home():
+    user_id = get_jwt_identity()
+    user = Users.query.get(user_id)
     posts = Posts.query.filter_by().all()
     last = math.ceil(len(posts)/int(params['no_of_posts']))
     page = request.args.get('page')
@@ -66,10 +140,11 @@ def home():
         prev = "/?page="+ str(page-1)
         next = "/?page="+ str(page+1)
     
-    return render_template('index.html', params=params, posts=posts, prev=prev, next=next)
+    return render_template('index.html', params=params, posts=posts, prev=prev, next=next, user=user)
 
 
 @app.route("/about")
+@jwt_required()
 def about():
     return render_template('about.html', params=params)
 
@@ -82,6 +157,7 @@ def uploader():
             return "Uploaded successfully!"
         
 @app.route("/post/<string:post_slug>", methods=['GET'])
+@jwt_required()
 def post_route(post_slug):
     post = Posts.query.filter_by(slug=post_slug).first()
     return render_template('post.html', params=params, post=post)
@@ -147,6 +223,7 @@ def logout():
     return redirect('/dashboard')
 
 @app.route("/contact", methods = ['GET', 'POST'])
+@jwt_required()
 def contact():
     if(request.method=='POST'):
         name = request.form.get('name')
