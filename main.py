@@ -37,6 +37,22 @@ app.config.update(
 def unauthorized_callback(reason):
     return redirect("/userlogin")
 
+@jwt.invalid_token_loader
+def invalid_token_callback(reason):
+    return redirect("/userlogin")
+
+@jwt.expired_token_loader
+def expired_token_callback(jwt_header, jwt_payload):
+    return redirect("/userlogin")
+
+@jwt.needs_fresh_token_loader
+def needs_fresh_token_callback(jwt_header, jwt_payload):
+    return redirect("/userlogin")
+
+@jwt.revoked_token_loader
+def revoked_token_callback(jwt_header, jwt_payload):
+    return redirect("/userlogin")
+
 mail = Mail(app)
 if(local_server):
     app.config['SQLALCHEMY_DATABASE_URI'] = params['local_uri']
@@ -104,7 +120,7 @@ def api_login():
             return redirect('/userlogin')
 
         # Create JWT
-        access_token = create_access_token(identity=user.id)
+        access_token = create_access_token(identity=str(user.id))
 
         # Store JWT in cookie
         response = make_response(redirect("/"))
