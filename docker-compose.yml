@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: codingthunder
+      MYSQL_USER: flaskuser
+      MYSQL_PASSWORD: flaskpass
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  flask_app:
+    build: .
+    container_name: flask_blog_app
+    ports:
+      - "5000:5000"
+    depends_on:
+      - mysql
+    volumes:
+      - .:/app
+    restart: always
+
+volumes:
+  mysql_data:

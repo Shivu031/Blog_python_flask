@@ -58,7 +58,9 @@ if(local_server):
     app.config['SQLALCHEMY_DATABASE_URI'] = params['local_uri']
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = params['prod_uri']
-app.config['UPLOAD_FOLDER'] = params['upload_location']
+
+app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, params['upload_location'])
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 db = SQLAlchemy(app)
 
 class Users(db.Model):
@@ -72,16 +74,16 @@ class Contacts(db.Model):
     name = db.Column(db.String(80), nullable=False)
     phone_num = db.Column(db.String(12), nullable=False)
     msg = db.Column(db.String(120), nullable=False)
-    date = db.Column(db.String(12), nullable=True)
+    date = db.Column(db.DateTime, nullable=True)
     email = db.Column(db.String(20), nullable=False)
 
 class Posts(db.Model):
     sno = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(80), nullable=False)
     slug = db.Column(db.String(21), nullable=False)
-    content = db.Column(db.String(120), nullable=False)
+    content = db.Column(db.Text, nullable=False)
     tagline = db.Column(db.String(120), nullable=False)
-    date = db.Column(db.String(12), nullable=True)
+    date = db.Column(db.DateTime, nullable=True)
     img_file = db.Column(db.String(12), nullable=True)
 
 @app.route("/register", methods=['POST','GET'])
@@ -257,5 +259,6 @@ def contact():
     return render_template('contact.html', params=params)
 
 
-app.run(debug=True)
-
+# app.run(debug=True)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
